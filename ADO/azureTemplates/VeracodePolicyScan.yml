@@ -1,0 +1,38 @@
+# VeracodePolicyScan.yml file
+# This is a yml template to run Veracode Static Analysis with Policy Scan.
+
+steps:
+
+  # Downloads the artifact created in Build job with binaries/package to be scanned
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      artifactName: 'verascan'
+      targetPath: '$(System.DefaultWorkingDirectory)/verascan'
+
+  - script: |
+      echo "Verifying Application Profile name..."
+      echo "$(System.CollectionUri)"
+      ORG_NAME=$(echo "$(System.CollectionUri)" | cut -d '/' -f 4)
+      echo "ORG NAME: $ORG_NAME"
+      APP_NAME="ADO/$ORG_NAME/$(System.TeamProject)/$(Build.Repository.Name)"
+      echo "##vso[task.setvariable variable=APP_NAME]$APP_NAME"
+      echo "Application Profile Name: $APP_NAME"
+    displayName: 'Application Profile Name'
+
+  # Runs UploadAndScan task to run Sandbox scan. It wait for X mins for results (parameter 'maximumWaitTime')
+  - task: Veracode@3
+    inputs:
+      ConnectionDetailsSelection: 'Credentials'
+      apiId: '$(VERACODE_API_ID)'
+      apiKey: '$(VERACODE_API_KEY)'
+      veracodeAppProfile: '$(APP_NAME)'
+      version: 'Build $(build.buildNumber)'
+      filepath: './verascan/'
+      createProfile: true
+      failBuildIfUploadAndScanBuildStepFails: true
+      failBuildOnPolicyFail: true
+      maximumWaitTime: '360'
+    displayName: 'Veracode SAST - Policy Scan'
+    env:
+      VERACODE_API_ID: $(VERACODE_API_ID)
+      VERACODE_API_KEY: $(VERACODE_API_KEY)

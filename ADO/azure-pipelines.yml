@@ -1,0 +1,151 @@
+# Base pipeline yml file
+# Executes Veracode security scans
+
+trigger:
+  branches:
+    include:
+    - '*'
+  
+pr:
+  branches:
+    include:
+      - main
+      - master
+
+variables:
+  - group: veracode-credentials
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+
+  # ======================================================================================
+  # Stage 1: Installing Veracode CLI and running Autopackager (It will always be executed)
+  # ======================================================================================
+  - stage: Package
+    displayName: 'Build & Package'
+    #condition: succeeded()
+
+    jobs:
+      
+      - job: PackageApp
+        displayName: 'Build & Package Application'
+        steps:
+          
+
+          # ============================================================================================================
+          # In my example, I am building and packaging verademo app, a Java project built with Maven
+          # You should follow packaging guide for project considering your programming language
+          # Follow the build and packaging requirements per technology in https://docs.veracode.com/r/r_supported_table
+          # It's recommendable to create a .zip file in those technologies that generate more than one artifact; for 
+          # example, .NET build generates multiple .dll files...all of them should be packaged in one .zip file which
+          # will be moved to verascan folder
+          # ============================================================================================================
+          - script: |
+              mkdir -p verascan
+              cd ./app
+              mvn -version
+              mvn -B clean package
+            displayName: "Compilar con Maven"
+          # ============================================================================================================
+
+          # --- Copying to artifacts directory ---
+          # In my example, I am getting verademo.war artifact which is the result of previous build script
+          - script: |
+              cp ./app/target/verademo.war verascan/
+            displayName: 'Preparing artifacts to publish'
+
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: '$(System.DefaultWorkingDirectory)/verascan'
+              artifactName: 'verascan'
+            displayName: 'Publish packaged artifacts'
+
+  # ======================================================================================
+  # Stage 2: Running Veracode Security Scans
+  # ======================================================================================
+  - stage: VeracodeSecurityScans
+    displayName: 'Veracode Security Scans'
+    condition: succeeded()
+    dependsOn: Package
+
+    jobs:
+
+    # Runs Veracode SAST - Pipeline Scan (With no Policy Enforcement)
+#    - job: 'SAST_PipelineScan'
+#      condition: |
+#        and(
+#          ne(variables['Build.Reason'], 'PullRequest'),
+#          or(
+#            ne(variables['Build.SourceBranch'], 'refs/heads/main'),
+#            ne(variables['Build.SourceBranch'], 'refs/heads/master')
+#          )
+#        )
+#      displayName: 'Veracode SAST - Pipeline Scan (No Policy Enforcement)'
+#      steps:
+#      - template: "./azureTemplates/VeracodePipelineScan.yml"
+#        parameters:
+#          CUSTOM_POLICY_NAME: 'myCustomPolicy'
+
+    # Runs Veracode SCA
+#    - job: 'SCA_ABS'
+#      displayName: 'Veracode SCA - Agent-Based Scan'
+#      steps:
+#      - template: "./azureTemplates/VeracodeSCA.yml"
+#        parameters:
+#          GITHUB_REPO_URI: $(Build.Repository.Uri)
+#          GITHUB_REPO_REF: $(Build.SourceBranch)
+#          GITHUB_REPO_NAME: 'oseduardo/verademo'
+#          SRCCLR_API_TOKEN: $(SRCCLR_API_TOKEN)
+#          SRCCLR_WORKSPACE_SLUG: 'wddUOZd'
+#          SRCCLR_SCAN_DIR: './app'
+      
+    # Runs Veracode SAST - Sandbox Scan
+    - job: 'SAST_SandboxScan'
+      displayName: 'Veracode SAST - Sandbox Scan'
+      steps:
+      - template: "./azureTemplates/VeracodeSandboxScan.yml"
+
+    # Runs Veracode SAST - Policy Scan
+    - job: 'SAST_PolicyScan'
+      displayName: 'Veracode SAST - Policy Scan'
+      steps:
+      - template: "./azureTemplates/VeracodePolicyScan.yml"
+
+    # Runs Veracode IaC Scan
+    - job: 'IaC_Scan'
+      displayName: 'Veracode IaC Scan'
+      steps:
+      - template: "./azureTemplates/VeracodeIaC.yml"
+        parameters:
+          CUSTOM_POLICY_NAME: 'myContainerSecurityDemoPolicy'
+          
+
+
+
+
+
+#    - job: 'SAST_SandboxScan'
+#      condition: |
+#        and(
+#          eq(variables['Build.Reason'], 'PullRequest'),
+#          or(
+#            eq(variables['Build.SourceBranch'], 'refs/heads/feature'),
+#            eq(variables['Build.SourceBranch'], 'refs/heads/feature/*'),
+#            eq(variables['Build.SourceBranch'], 'refs/heads/release'),
+#            eq(variables['Build.SourceBranch'], 'refs/heads/release/*')
+#          )
+#        )
+
+
+
+#    - job: 'SAST_PolicyScan'
+#      condition: |
+#        and(
+#          eq(variables['Build.Reason'], 'PullRequest'),
+#          or(
+#            eq(variables['Build.SourceBranch'], 'refs/heads/release'),
+#            eq(variables['Build.SourceBranch'], 'refs/heads/release/*')
+#          )
+#        )

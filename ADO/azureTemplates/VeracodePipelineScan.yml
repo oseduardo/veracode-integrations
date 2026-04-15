@@ -1,0 +1,82 @@
+# VeracodePipelineScan.yml file
+# This is a yml template to run Veracode Static Analysis with Pipeline Scan
+
+parameters:
+- name: 'CUSTOM_POLICY_NAME'
+  type: string
+  default: ''
+
+steps:
+
+  # Downloads the artifact created in Build job with binaries/package to be scanned
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      artifactName: 'verascan'
+      targetPath: '$(System.DefaultWorkingDirectory)/verascan'
+
+  # --- Validating credentials ---
+  - script: |
+      if [ -z "$VERACODE_API_ID" ] || [ -z "$VERACODE_API_KEY" ]; then
+        echo "##vso[task.logissue type=error]VERACODE_API_ID and VERACODE_API_KEY are required"
+        echo "Configure a variable groups in Azure Pipelines or in Key Vault"
+        exit 1
+      fi
+      echo "Veracode credentials have been verified"
+    displayName: 'Validating credentials'
+    env:
+      VERACODE_API_ID: $(VERACODE_API_ID)
+      VERACODE_API_KEY: $(VERACODE_API_KEY)
+
+  # --- Installing pre-req ---
+  - script: |
+      echo "Installing pre-reqs..."
+      sudo apt-get update && sudo apt-get install -y curl unzip grep
+    displayName: 'Installing pre-reqs'
+
+  # --- Installing Veracode CLI ---
+  - script: |
+      echo "Installing Veracode CLI..."
+      curl -fsS -O https://tools.veracode.com/veracode-cli/install
+      chmod +x ./install
+      ./install
+      if [ -f "./veracode" ]; then
+        chmod +x veracode
+        ./veracode version
+      else
+        echo "##vso[task.logissue type=error]Veracode CLI was not successfully installed"
+        exit 1
+      fi
+    displayName: 'Installing Veracode CLI'
+
+  - script: |
+      export VERACODE_API_KEY_ID=$VERACODE_API_ID
+      export VERACODE_API_KEY_SECRET=$VERACODE_API_KEY
+
+      mkdir -p scan_results
+
+      echo "Downloading custom policy..."
+      echo "Custom Policy Name: ${{ parameters.CUSTOM_POLICY_NAME }}"
+      ./veracode policy get ${{ parameters.CUSTOM_POLICY_NAME }} --format JSON
+      if [ -e "${{ parameters.CUSTOM_POLICY_NAME }}" ]; then
+        echo "${{ parameters.CUSTOM_POLICY_NAME }} has been downloaded successfully"
+      else
+        echo "Policy does not exist!"
+        exit 1
+      fi
+
+      ls -all
+
+      echo "Running Pipeline Scan"
+      ./veracode static scan ./verascan/verademo.war --policy-file "${{ parameters.CUSTOM_POLICY_NAME }}"
+      mv results.json "scan_results/results.json"
+    env:
+      VERACODE_API_ID: $(VERACODE_API_ID)
+      VERACODE_API_KEY: $(VERACODE_API_KEY)
+
+  # Publishes Pipeline Scan results
+  - task: PublishPipelineArtifact@1
+    inputs:
+      targetPath: '$(System.DefaultWorkingDirectory)/scan_results'
+      artifactName: 'veracode-pipeline-results'
+    condition: succeededOrFailed()
+    displayName: 'Publishing Pipeline Scan results'

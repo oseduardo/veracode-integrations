@@ -1,0 +1,39 @@
+# VeracodeSCA.yml file
+# This is a yml template to run Veracode Software Compisition Analysis with Agent-Based Scan
+
+parameters:
+# Repo URI
+- name: 'GITHUB_REPO_URI'
+  type: string
+  default: ''
+# Ref Branch of code repo  
+- name: 'GITHUB_REPO_REF'
+  type: string
+  default: ''
+# GitHub repo name 
+- name: 'GITHUB_REPO_NAME'
+  type: string
+  default: ''
+# SRCCLR token to run Agent-based scan
+- name: 'SRCCLR_API_TOKEN'
+  type: string
+  default: ''
+# SRCCLR workspace slug
+- name: 'SRCCLR_WORKSPACE_SLUG'
+  type: string
+  default: ''
+# SRCCLR scan dir in repo
+- name: 'SRCCLR_SCAN_DIR'
+  type: string
+  default: ''
+
+steps:
+
+# Runs SCA Agent-based scan. Depending on SCA policy rules, if "Build Action" is set up to 'Error', the pipeline will break with ExitCode=5 
+- checkout: self
+- script: |
+    echo "Running Veracode SCA (Agent-Based Scan)..."
+    curl -sSL https://download.sourceclear.com/ci.sh | bash -s -- scan --recursive --update-advisor || echo "SCA scan has finished"
+  displayName: 'Veracode SCA Scan'
+  env:
+    SRCCLR_API_TOKEN: $(SRCCLR_API_TOKEN)

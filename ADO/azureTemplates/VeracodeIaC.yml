@@ -1,0 +1,95 @@
+# VeracodeContainerSecurity.yml file
+# This is a yml template to run Veracode Container Security. It runs container and IaC analysis.
+
+parameters:
+- name: 'CUSTOM_POLICY_NAME'
+  type: string
+  default: ''
+
+steps:
+
+  - checkout: self
+
+  # --- Installing pre-req ---
+  - script: |
+      echo "Installing pre-reqs..."
+      sudo apt-get update && sudo apt-get install -y curl unzip grep
+    displayName: 'Installing pre-reqs'
+
+  # --- Installing Veracode CLI ---
+  - script: |
+      echo "Installing Veracode CLI..."
+      curl -fsS -O https://tools.veracode.com/veracode-cli/install
+      chmod +x ./install
+      ./install
+      if [ -f "./veracode" ]; then
+        chmod +x veracode
+        ./veracode version
+      else
+        echo "##vso[task.logissue type=error]Veracode CLI was not successfully installed"
+        exit 1
+      fi
+    displayName: 'Installing Veracode CLI'
+
+  # --- Validating credentials ---
+  - script: |
+      if [ -z "$VERACODE_API_ID" ] || [ -z "$VERACODE_API_KEY" ]; then
+        echo "##vso[task.logissue type=error]VERACODE_API_ID and VERACODE_API_KEY are required"
+        echo "Configure a variable groups in Azure Pipelines or in Key Vault"
+        exit 1
+      fi
+      echo "Veracode credentials have been verified"
+    displayName: 'Validating credentials'
+    env:
+      VERACODE_API_ID: $(VERACODE_API_ID)
+      VERACODE_API_KEY: $(VERACODE_API_KEY)
+
+  # Runs Veracode Container Security
+  - task: CmdLine@2
+    displayName: 'IaC Scan'
+    inputs:
+      script: |
+        export VERACODE_API_KEY_ID=$VERACODE_API_ID
+        export VERACODE_API_KEY_SECRET=$VERACODE_API_KEY
+        echo "Downloading custom policy..."
+        echo "Custom Policy Name: ${{ parameters.CUSTOM_POLICY_NAME }}"
+        ./veracode policy get ${{ parameters.CUSTOM_POLICY_NAME }}
+        if [ -e "${{ parameters.CUSTOM_POLICY_NAME }}.rego" ]; then
+          echo "${{ parameters.CUSTOM_POLICY_NAME }}.rego has been downloaded successfully"
+        else
+          echo "Policy does not exist!"
+          exit 1
+        fi
+        echo "Running Veracode IaC Scan on source repo $(Build.Repository.Name), and branch $(Build.SourceBranch)"
+        ./veracode scan --type directory --source . --format table --output iac_results.json --policy ${{ parameters.CUSTOM_POLICY_NAME }}.rego --verbose
+    env:
+      VERACODE_API_ID: $(VERACODE_API_ID)
+      VERACODE_API_KEY: $(VERACODE_API_KEY)
+        #./veracode scan --type directory --source ${{ parameters.CUSTOM_WORKSPACE }} --format table --output iac_results.json --policy ${{ parameters.CUSTOM_POLICY_NAME }}.rego 
+
+  # Publishes IaC Scan results
+  - task: PublishPipelineArtifact@1
+    inputs:
+      targetPath: '$(System.DefaultWorkingDirectory)/iac_results.json'
+      artifactName: 'veracode-pipeline-results'
+    condition: succeededOrFailed()
+    displayName: 'Publishing IaC Scan results'
+
+  #It's recommended to create here an artifact (cs_results.json file) in order to store the Container Security scan results,
+  #so the user can review that file to take remediation actions on it
+
+  # Verify Container Security results to control workflow
+  #- task: CmdLine@2
+  #  displayName: 'Validating Container Security Scan Results'
+  #  inputs:
+  #    script: |
+  #      cat cs_results.json
+  #      echo ''
+  #      PASS=$(cat cs_results.json | grep "Policy Passed = " | awk '{print $4}')
+  #      if $PASS; then
+  #        exit 0
+  #      else
+  #        exit 1
+  #      fi
+
+

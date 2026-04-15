@@ -1,0 +1,41 @@
+# VeracodeSandboxScan.yml file
+# This is a yml template to run Veracode Static Analysis with Sandbox Scan
+
+steps:
+
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      artifactName: 'verascan'
+      targetPath: '$(System.DefaultWorkingDirectory)/verascan'
+
+  - script: |
+      echo "Verifying Application Profile name..."
+      echo "$(System.CollectionUri)"
+      ORG_NAME=$(echo "$(System.CollectionUri)" | cut -d '/' -f 4)
+      echo "ORG NAME: $ORG_NAME"
+      APP_NAME="ADO/$ORG_NAME/$(System.TeamProject)/$(Build.Repository.Name)"
+      echo "##vso[task.setvariable variable=APP_NAME]$APP_NAME"
+      echo "Application Profile Name: $APP_NAME"
+      echo  "Sandbox Name: Azure Integration - $(Build.SourceBranch)"
+    displayName: 'Application Profile and Sandbox Names'
+
+  # Runs UploadAndScan task to run Sandbox scan. It wait for X mins for results (parameter 'maximumWaitTime')
+  - task: Veracode@3
+    inputs:
+      ConnectionDetailsSelection: 'Credentials'
+      apiId: '$(VERACODE_API_ID)'
+      apiKey: '$(VERACODE_API_KEY)'
+      veracodeAppProfile: '$(APP_NAME)'
+      version: 'Build $(build.buildNumber)'
+      filepath: './verascan/'
+      sandboxName: 'Azure Integration - $(Build.SourceBranch)'
+      createSandBox: true
+      createProfile: true
+      failBuildIfUploadAndScanBuildStepFails: true
+      failBuildOnPolicyFail: true
+      maximumWaitTime: '360'
+    displayName: 'Veracode SAST - Sandbox Scan'
+    env:
+      VERACODE_API_ID: $(VERACODE_API_ID)
+      VERACODE_API_KEY: $(VERACODE_API_KEY)
+
